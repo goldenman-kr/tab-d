@@ -15,6 +15,21 @@ Mac의 확장 화면을 Android 태블릿에 표시하는 앱입니다. USB와 �
 - Mac 화면 꺼짐·잠금 후 연결과 영상 복구
 - 연결된 상대 기기의 시스템 장치명 표시
 
+## 릴리즈 파일로 설치
+
+[Releases](../../releases/latest)에서 Mac용 DMG와 Android용 APK를 받을 수 있습니다.
+
+1. Mac에서 DMG를 열고 **Tab-D.app을 Applications 폴더로 드래그**한 뒤 실행합니다. 기존 앱이 실행 중이면 먼저 종료합니다.
+2. 태블릿에 APK를 내려받아 설치합니다. Android가 요청하면 해당 다운로드 앱의 **알 수 없는 앱 설치**를 허용합니다. 또는 Mac의 Android Platform Tools로 `adb -d install -r Tab-D-0.6.1-Android.apk`를 실행합니다.
+3. 태블릿의 USB 디버깅을 켜고 Mac과 연결한 뒤 컴퓨터 허용 창을 승인합니다. Mac 앱이 USB 페어링을 준비합니다.
+4. 아래의 macOS 권한을 허용하고 **화면 연결**을 누릅니다.
+
+DMG는 **Apple Silicon 전용**, 자체 개발 서명·미공증 빌드입니다. macOS가 차단하면 시스템 설정의 개인정보 보호 및 보안에서 직접 확인하여 실행을 허용해야 합니다. USB 연결과 최초 무선 페어링에는 **Android Platform Tools의 adb**가 필요하며 기본 검색 위치는 `$HOME/Library/Android/sdk/platform-tools/adb`입니다. APK도 개인용 debug 서명 빌드입니다. 이전 설치본과 서명이 다르면 Android가 업데이트를 거부할 수 있습니다.
+
+릴리즈 앱은 설정·인증 자료를 사용자별 `~/Library/Application Support/Tab-D/`에 저장합니다. 개발 빌드의 페어링과 별개이므로 처음에는 USB로 다시 페어링합니다. 첨부한 `SHA256SUMS.txt`로 다운로드 파일의 체크섬을 대조할 수 있습니다.
+
+아래는 소스에서 직접 빌드하는 방법입니다.
+
 ## 설치 준비
 
 소스에서 Mac 앱과 Android APK를 직접 빌드합니다.
@@ -139,3 +154,7 @@ Mac은 SwiftUI·AppKit, ScreenCaptureKit, VideoToolbox를 사용하고, Android�
 bash scripts/test-core.sh --hardware
 bash scripts/build-android.sh :app:protocolCheck :app:lintDebug
 ```
+
+## 릴리즈 패키지 생성
+
+양쪽 빌드를 완료한 후 `bash scripts/package-release.sh`를 실행하면 `build/releases/` 아래에 DMG·APK·체크섬을 생성합니다. DMG는 앱·Applications 바로가기·설치 안내를 패키징하며, 개발 환경의 상태 경로를 제거하고 다시 서명합니다. 서명 키·페어링 정보는 포함하지 않습니다.
