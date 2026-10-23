@@ -1,0 +1,24 @@
+build/
+android/.gradle/
+android/local.properties
+*.keystore
+*.p12
+*.pem
+*.key
+.DS_Store
+
+__pycache__/
+
+# Local planning, device captures, credentials and generated packages
+.omx/
+.agents/
+.codex/
+DESIGN.md
+docs/validation/
+docs/design/
+*.apk
+*.aab
+*.jks
+*.keychain-db
+.env
+.env.*

@@ -1,0 +1,24 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace 'xyz.kryp.app.tabd'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'xyz.kryp.app.tabd'
+        minSdk 30
+        targetSdk 36
+        versionCode 7
+        versionName '0.6.1'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { buildConfig = false }
+}
+
+tasks.register('protocolCheck', JavaExec) {
+    dependsOn 'compileDebugUnitTestKotlin'
+    classpath = files('build/tmp/kotlin-classes/debugUnitTest', 'build/tmp/kotlin-classes/debug') + configurations.debugUnitTestRuntimeClasspath
+    mainClass = 'xyz.kryp.app.tabd.ProtocolCheck'
+}
