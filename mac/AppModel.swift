@@ -7,7 +7,7 @@ import Foundation
     @Published var phase: SessionPhase = .idle
     @Published var route = "USB"
     @Published var deviceName = "Android 태블릿"
-    @Published var message = "태블릿에서 Tab-D를 열어주세요"
+    @Published var message = "태블릿에서 Mr. Tab-D를 열어주세요"
     @Published var lastError: String?
     @Published var allowLAN = false
     @Published var peerConnected = false
@@ -181,10 +181,10 @@ import Foundation
         guard peerConnected else {
             let states=server?.diagnostics["listenerStates"] as? [String:String] ?? [:]
             if states.values.contains("failed") { listenerAttempts=0; restartWakeTransport() }
-            lastError = "태블릿에서 Tab-D를 열어주세요"; return
+            lastError = "태블릿에서 Mr. Tab-D를 열어주세요"; return
         }
         guard pendingRemovalID == nil else {
-            lastError="가상 화면 제거를 확인하지 못했습니다. Tab-D를 종료한 뒤 다시 실행해주세요"; return
+            lastError="가상 화면 제거를 확인하지 못했습니다. Mr. Tab-D를 종료한 뒤 다시 실행해주세요"; return
         }
         guard !isStopping, phase != .starting, phase != .streaming,
               phase != .recovering || resuming else { sendStatus(); return }
@@ -306,7 +306,7 @@ import Foundation
             }
             try? await Task.sleep(nanoseconds:UInt64(max(0,min(0.1,deadline-ProcessInfo.processInfo.systemUptime))*1_000_000_000))
         }
-        lastError="가상 화면 제거가 지연됩니다. Tab-D를 종료하면 macOS가 화면을 회수합니다"
+        lastError="가상 화면 제거가 지연됩니다. Mr. Tab-D를 종료하면 macOS가 화면을 회수합니다"
         return false
     }
 
@@ -422,7 +422,7 @@ import Foundation
         }
         hasInputPermission=CGPreflightPostEventAccess()
         guard hasInputPermission else {
-            inputMessage="Mac의 손쉬운 사용 설정에서 Tab-D를 허용해주세요"
+            inputMessage="Mac의 손쉬운 사용 설정에서 Mr. Tab-D를 허용해주세요"
             reply(false,inputMessage!)
             if !requestedInputPermission { requestInputPermission() }
             return
@@ -446,7 +446,7 @@ import Foundation
                 accepted=scrollInput.post(request,point:point,displayHeight:CGDisplayBounds(target).height)
                 text=accepted ? "" : "Mac으로 스크롤을 전달하지 못했습니다"
             } else {
-                inputMessage="Mac의 손쉬운 사용 설정에서 Tab-D를 허용해주세요"
+                inputMessage="Mac의 손쉬운 사용 설정에서 Mr. Tab-D를 허용해주세요"
                 text=inputMessage!
                 if !requestedInputPermission { requestInputPermission() }
             }
@@ -470,7 +470,7 @@ import Foundation
                 text=accepted ? "" : "드래그가 종료되었거나 입력 순서가 맞지 않습니다"
             } else {
                 pointer.release(reason:"permissionLost")
-                inputMessage="Mac의 손쉬운 사용 설정에서 Tab-D를 허용해주세요"
+                inputMessage="Mac의 손쉬운 사용 설정에서 Mr. Tab-D를 허용해주세요"
                 text=inputMessage!
                 if !requestedInputPermission { requestInputPermission() }
             }
@@ -713,7 +713,7 @@ import Foundation
     private func publish() {
         phase=machine.phase
         switch phase {
-        case .idle: message=peerConnected ? "연결 가능" : "태블릿에서 Tab-D를 열어주세요"
+        case .idle: message=peerConnected ? "연결 가능" : "태블릿에서 Mr. Tab-D를 열어주세요"
         case .ready: message="연결 가능"
         case .starting: message="화면 연결 중…"
         case .streaming: message="확장 중"
@@ -773,7 +773,7 @@ import Foundation
         hasInputPermission=CGPreflightPostEventAccess()
         if !hasInputPermission { _=CGRequestPostEventAccess() }
         hasInputPermission=CGPreflightPostEventAccess()
-        inputMessage=hasInputPermission ? nil : "Mac의 손쉬운 사용 설정에서 Tab-D를 허용해주세요"
+        inputMessage=hasInputPermission ? nil : "Mac의 손쉬운 사용 설정에서 Mr. Tab-D를 허용해주세요"
         writeDiagnostics()
     }
     func openInputSettings() {

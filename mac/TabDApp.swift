@@ -8,7 +8,7 @@ import SwiftUI
             MenuPanel(model:delegate.model)
         } label: {
             Image(systemName:delegate.model.phase == .paused ? "display.and.arrow.down" : "display")
-                .accessibilityLabel("Tab-D: \(delegate.model.message)")
+                .accessibilityLabel("Mr. Tab-D: \(delegate.model.message)")
         }.menuBarExtraStyle(.window)
     }
 }
@@ -29,7 +29,7 @@ struct MenuPanel: View {
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {
-                Text(settings ? "화면 설정" : "Tab-D").font(.title3.weight(.semibold))
+                Text(settings ? "화면 설정" : "Mr. Tab-D").font(.title3.weight(.semibold))
                 Spacer()
                 if settings { Button("완료") { settings=false }.buttonStyle(.plain) }
                 else {
@@ -37,7 +37,7 @@ struct MenuPanel: View {
                         Button("화면 기록 권한 확인") { model.requestPermission() }
                         Button("클릭 제어 권한 확인") { model.requestInputPermission() }
                         Button("손쉬운 사용 설정 열기…") { model.openInputSettings() }
-                        Button("Tab-D 종료") { NSApp.terminate(nil) }
+                        Button("Mr. Tab-D 종료") { NSApp.terminate(nil) }
                     } label:{ Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).fixedSize()
                 }
             }
@@ -66,7 +66,7 @@ struct MenuPanel: View {
                     Text(model.message).font(.subheadline)
                 }
                 if model.phase == .paused {
-                    Text("태블릿에서 Tab-D를 열면 다시 표시합니다")
+                    Text("태블릿에서 Mr. Tab-D를 열면 다시 표시합니다")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Button {
@@ -97,7 +97,7 @@ struct MenuPanel: View {
                 Button("손쉬운 사용 설정 열기") { model.openInputSettings() }
             }
             Divider()
-            Button("Tab-D 종료") { NSApp.terminate(nil) }.foregroundStyle(.secondary)
+            Button("Mr. Tab-D 종료") { NSApp.terminate(nil) }.foregroundStyle(.secondary)
         }.buttonStyle(.plain).padding(20).frame(width:320)
     }
 }

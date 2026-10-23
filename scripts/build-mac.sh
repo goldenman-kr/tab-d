@@ -21,12 +21,12 @@ from pathlib import Path
 import plistlib
 root=Path.cwd()
 info={'CFBundleExecutable':'Tab-D','CFBundleIdentifier':'xyz.kryp.app.tabd',
- 'CFBundleName':'Tab-D','CFBundleDisplayName':'Tab-D','CFBundlePackageType':'APPL',
- 'CFBundleShortVersionString':'0.6.1','CFBundleVersion':'8','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
+ 'CFBundleName':'Mr. Tab-D','CFBundleDisplayName':'Mr. Tab-D','CFBundlePackageType':'APPL',
+ 'CFBundleShortVersionString':'0.6.2','CFBundleVersion':'9','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
  'LSUIElement':True,'NSHighResolutionCapable':True,
  'NSLocalNetworkUsageDescription':'태블릿에 Mac 확장 화면을 보내기 위해 로컬 네트워크를 사용합니다.',
  'NSBonjourServices':['_tabd._tcp'],
- 'NSScreenCaptureUsageDescription':'Tab-D 가상 화면을 태블릿에 표시하기 위해 화면 기록 권한이 필요합니다.',
+ 'NSScreenCaptureUsageDescription':'Mr. Tab-D 가상 화면을 태블릿에 표시하기 위해 화면 기록 권한이 필요합니다.',
  'TabDDevelopmentStateDirectory':str(root/'build/private')}
 with (root/'build/Tab-D.app/Contents/Info.plist').open('wb') as f: plistlib.dump(info,f)
 PY

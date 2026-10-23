@@ -1,8 +1,8 @@
-# Tab-D (탭디)
+# Mr. Tab-D (미스터 탭디)
 
 Mac의 확장 화면을 Android 태블릿에 표시하는 앱입니다. USB와 같은 네트워크의 무선 연결을 지원하며, Mac은 메뉴 막대에서, 태블릿은 전체 화면과 숨김 제어 바에서 조작합니다.
 
-현재 버전은 **0.6.1**입니다. MacBook Pro M4와 Android 16 태블릿에서 개발했습니다. 개인용 개발 빌드이며 앱스토어 배포판이나 공증된 설치 프로그램은 제공하지 않습니다.
+현재 버전은 **0.6.2**이며 앱 표시 이름은 Mr. Tab-D입니다. 내부 식별자·설정 저장 위치·통신 방식은 유지합니다. MacBook Pro M4와 Android 16 태블릿에서 개발했습니다. 개인용 개발 빌드이며 앱스토어 배포판이나 공증된 설치 프로그램은 제공하지 않습니다.
 
 ## 주요 기능
 
@@ -19,8 +19,8 @@ Mac의 확장 화면을 Android 태블릿에 표시하는 앱입니다. USB와 �
 
 [Releases](../../releases/latest)에서 Mac용 DMG와 Android용 APK를 받을 수 있습니다.
 
-1. Mac에서 DMG를 열고 **Tab-D.app을 Applications 폴더로 드래그**한 뒤 실행합니다. 기존 앱이 실행 중이면 먼저 종료합니다.
-2. 태블릿에 APK를 내려받아 설치합니다. Android가 요청하면 해당 다운로드 앱의 **알 수 없는 앱 설치**를 허용합니다. 또는 Mac의 Android Platform Tools로 `adb -d install -r Tab-D-0.6.1-Android.apk`를 실행합니다.
+1. Mac에서 DMG를 열고 **Mr. Tab-D.app을 Applications 폴더로 드래그**한 뒤 실행합니다. 기존 앱이 실행 중이면 먼저 종료합니다.
+2. 태블릿에 APK를 내려받아 설치합니다. Android가 요청하면 해당 다운로드 앱의 **알 수 없는 앱 설치**를 허용합니다. 또는 Mac의 Android Platform Tools로 `adb -d install -r Mr-Tab-D-0.6.2-Android.apk`를 실행합니다.
 3. 태블릿의 USB 디버깅을 켜고 Mac과 연결한 뒤 컴퓨터 허용 창을 승인합니다. Mac 앱이 USB 페어링을 준비합니다.
 4. 아래의 macOS 권한을 허용하고 **화면 연결**을 누릅니다.
 
@@ -79,8 +79,8 @@ Mac 빌드 과정은 `build/private/signing/`에 이 컴퓨터용 개발 서명�
 기존 Tab-D가 실행 중이면 메뉴에서 종료한 뒤 설치합니다.
 
 ```sh
-ditto build/Tab-D.app /Applications/Tab-D.app
-open /Applications/Tab-D.app
+ditto build/Tab-D.app "/Applications/Mr. Tab-D.app"
+open "/Applications/Mr. Tab-D.app"
 ```
 
 공증되지 않은 개발 빌드이므로 macOS가 실행을 차단하면 **시스템 설정 → 개인정보 보호 및 보안**에서 직접 확인하여 실행을 허용합니다.

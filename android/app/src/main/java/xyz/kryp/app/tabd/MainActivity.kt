@@ -250,7 +250,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             gravity = Gravity.CENTER
             setPadding(dp(40), dp(32), dp(40), dp(32))
             setBackgroundColor(backgroundColor)
-            addView(label("Tab-D", 18, sage), wrap().apply { bottomMargin = dp(42) })
+            addView(label("Mr. Tab-D", 18, sage), wrap().apply { bottomMargin = dp(42) })
             addView(label("▱", 64, sage), wrap().apply { bottomMargin = dp(22) })
             hostNameLabel = label("Mac", 30, Color.WHITE, true)
             addView(hostNameLabel, wrap())
@@ -1018,7 +1018,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
         AlertDialog.Builder(this).setTitle("화면 설정")
-            .setMessage("${quality}화질은 Mac의 Tab-D 메뉴에서 변경합니다.\n연결 주소는 화면 연결을 종료한 뒤 바꿀 수 있습니다.")
+            .setMessage("${quality}화질은 Mac의 Mr. Tab-D 메뉴에서 변경합니다.\n연결 주소는 화면 연결을 종료한 뒤 바꿀 수 있습니다.")
             .setView(input).setNegativeButton("닫기", null)
             .setPositiveButton("주소 적용") { _, _ ->
                 val host = input.text.toString().trim()
