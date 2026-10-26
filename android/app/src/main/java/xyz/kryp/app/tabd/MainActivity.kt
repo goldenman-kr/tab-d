@@ -43,6 +43,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     private lateinit var decoder: VideoDecoder
     private val preferences by lazy { getSharedPreferences("tabd", MODE_PRIVATE) }
     @Volatile private var foreground = false
+    private var resumed = false
     @Volatile private var surfaceReady = false
     @Volatile private var authenticated = false
     private var retained = false
@@ -213,7 +214,6 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                 .filterNot { it.isISOControl() }.trim().take(128).ifBlank { "Android 태블릿" }
         }
         decoder = VideoDecoder(this)
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         surface = SurfaceView(this).apply {
             contentDescription = "Mac 확장 화면. 짧은 탭은 왼쪽 클릭, 빠른 두 번 탭은 더블클릭, 0.5초 길게 누르기는 오른쪽 클릭, 한 손가락 움직임은 드래그, 두 손가락 세로 움직임은 스크롤, 뒤로가기는 제어 메뉴. 접근성 클릭은 제어 메뉴를 엽니다"
@@ -316,7 +316,14 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             if (authenticated && recovery.awaitingStatus) awaitHostStatus() else maybeStart()
         }
     }
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        updateScreenAwake()
+    }
     override fun onPause() {
+        resumed = false
+        updateScreenAwake()
         cancelSurfaceInput("background")
         super.onPause()
     }
@@ -550,6 +557,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                     val configuredEpoch = value.optLong("epoch", -1)
                     if (configuredEpoch < 0 || (hostEpoch >= 0 && configuredEpoch != hostEpoch)) return@post
                     if (epoch != configuredEpoch || latestConfig == null) {
+                        presentedEpoch = -1L
+                        updateScreenAwake()
                         cancelSurfaceInput("epochChanged")
                         framesCurrentEpoch = 0
                     }
@@ -653,6 +662,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                     preferences.edit().putBoolean("scrollHintSeen", true).apply()
                 }
             }
+            updateScreenAwake()
             if (frames % 30L == 0L) diagnostics()
         }
     }
@@ -661,8 +671,19 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     override fun decoderError(message: String) { main.post { showError(message); diagnostics() } }
 
+    // Decoder readiness/output alone is insufficient: wait for a frame actually
+    // presented for this epoch. Static desktops keep this flag until interruption.
+    private fun updateScreenAwake() {
+        val keepAwake = resumed && fullscreen && canDecode(epoch) &&
+            presentedEpoch == epoch && lastError == null
+        val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if ((window.attributes.flags and flag != 0) == keepAwake) return
+        if (keepAwake) window.addFlags(flag) else window.clearFlags(flag)
+    }
+
     private fun showReady() {
         fullscreen = false; ready.visibility = View.VISIBLE; bar.visibility = View.GONE
+        updateScreenAwake()
         window.insetsController?.show(WindowInsets.Type.systemBars())
     }
     private fun revealVideo() {
@@ -686,7 +707,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         primary.text = if (retained) "유지한 화면으로 돌아가기" else "화면 연결"
         barState.text = getString(R.string.bar_state, client.route)
     }
-    private fun showError(message: String) { lastError = message; updateState(message) }
+    private fun showError(message: String) { lastError = message; updateScreenAwake(); updateState(message) }
     private fun hostError(message: String, retainedDisplay: Boolean = false) {
         cancelRecoveryCommand()
         pendingRecoveryStart = false
@@ -698,6 +719,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         invalidateVideo(); showReady(); showError(message)
     }
     private fun invalidateVideo() {
+        presentedEpoch = -1L
+        updateScreenAwake()
         cancelSurfaceInput("videoInvalidated")
         if (pendingClicks.containsKey(lastClick?.optString("id"))) lastClick?.put("status", "cancelled")
         pendingClicks.clear(); main.removeCallbacks(clickTimeout)
