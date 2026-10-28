@@ -15,3 +15,6 @@ xcrun swiftc -swift-version 5 -D TABD_VIDEO_TESTING \
  -framework AppKit -framework ScreenCaptureKit -framework VideoToolbox \
  mac/Video/*.swift mac/Tests/VideoPacketTests.swift -o build/video-packet-tests
 build/video-packet-tests "$@"
+xcrun swiftc -swift-version 5 -module-cache-path "$PWD/build/module-cache" \
+ mac/Update/UpdatePolicy.swift mac/Tests/UpdatePolicyTests.swift -o build/update-policy-tests
+build/update-policy-tests

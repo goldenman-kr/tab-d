@@ -11,6 +11,7 @@ import java.nio.ByteOrder
 /** Dependency-free tests for untrusted stream boundaries and video metadata. */
 object ProtocolCheck {
     @JvmStatic fun main(arguments: Array<String>) {
+        println("AndroidUpdatePolicy: ${checkAndroidUpdatePolicy()} version / origin / checksum / signer checks passed")
         val stream = ByteArrayOutputStream()
         Wire.write(DataOutputStream(stream), 1, "hello".toByteArray())
         val data = stream.toByteArray()

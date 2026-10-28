@@ -5,7 +5,7 @@ import SwiftUI
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     var body: some Scene {
         MenuBarExtra {
-            MenuPanel(model:delegate.model)
+            MenuPanel(model:delegate.model, updater:delegate.updater)
         } label: {
             Image(systemName:delegate.model.phase == .paused ? "display.and.arrow.down" : "display")
                 .accessibilityLabel("Mr. Tab-D: \(delegate.model.message)")
@@ -15,15 +15,18 @@ import SwiftUI
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     let model=AppModel()
+    lazy var updater=AppUpdater(canPrompt:{ [weak self] in self?.model.isBusy == false && NSApp.modalWindow == nil })
     func applicationDidFinishLaunching(_ notification:Notification) {
         NSApp.setActivationPolicy(.accessory)
         model.launch()
+        updater.check()
     }
-    func applicationWillTerminate(_ notification:Notification) { model.shutdown() }
+    func applicationWillTerminate(_ notification:Notification) { updater.close(); model.shutdown() }
 }
 
 struct MenuPanel: View {
     @ObservedObject var model:AppModel
+    @ObservedObject var updater:AppUpdater
     @State private var settings=false
     private let sage=Color(red:0.66,green:0.76,blue:0.65)
     var body: some View {
@@ -37,6 +40,7 @@ struct MenuPanel: View {
                         Button("화면 기록 권한 확인") { model.requestPermission() }
                         Button("클릭 제어 권한 확인") { model.requestInputPermission() }
                         Button("손쉬운 사용 설정 열기…") { model.openInputSettings() }
+                        Button("업데이트 확인…") { updater.check(manual:true) }
                         Button("Mr. Tab-D 종료") { NSApp.terminate(nil) }
                     } label:{ Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).fixedSize()
                 }
@@ -97,6 +101,10 @@ struct MenuPanel: View {
                 Button("손쉬운 사용 설정 열기") { model.openInputSettings() }
             }
             Divider()
+            if updater.busy {
+                HStack { ProgressView().controlSize(.small); Text(updater.status ?? "업데이트 확인 중…").font(.caption) }
+            }
+            Button("업데이트 확인…") { updater.check(manual:true) }.disabled(updater.busy)
             Button("Mr. Tab-D 종료") { NSApp.terminate(nil) }.foregroundStyle(.secondary)
         }.buttonStyle(.plain).padding(20).frame(width:320)
     }

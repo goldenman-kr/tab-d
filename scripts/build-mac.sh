@@ -15,14 +15,14 @@ xcrun swiftc -swift-version 5 -target arm64-apple-macosx14.0 \
  -framework AppKit -framework SwiftUI -framework ScreenCaptureKit -framework VideoToolbox \
  -framework Network -framework Security -framework CoreGraphics \
  mac/TabDApp.swift mac/AppModel.swift mac/Session/*.swift mac/Video/*.swift \
- mac/Transport/*.swift mac/Input/*.swift build/VirtualDisplayBridge.o -o build/Tab-D.app/Contents/MacOS/Tab-D
+ mac/Transport/*.swift mac/Input/*.swift mac/Update/*.swift build/VirtualDisplayBridge.o -o build/Tab-D.app/Contents/MacOS/Tab-D
 python3 - <<'PY'
 from pathlib import Path
 import plistlib
 root=Path.cwd()
 info={'CFBundleExecutable':'Tab-D','CFBundleIdentifier':'xyz.kryp.app.tabd',
  'CFBundleName':'Mr. Tab-D','CFBundleDisplayName':'Mr. Tab-D','CFBundlePackageType':'APPL',
- 'CFBundleShortVersionString':'0.6.2','CFBundleVersion':'9','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
+ 'CFBundleShortVersionString':'0.6.5','CFBundleVersion':'10','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
  'LSUIElement':True,'NSHighResolutionCapable':True,
  'NSLocalNetworkUsageDescription':'태블릿에 Mac 확장 화면을 보내기 위해 로컬 네트워크를 사용합니다.',
  'NSBonjourServices':['_tabd._tcp'],

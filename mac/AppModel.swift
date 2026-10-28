@@ -9,12 +9,12 @@ import Foundation
     @Published var deviceName = "Android 태블릿"
     @Published var message = "태블릿에서 Mr. Tab-D를 열어주세요"
     @Published var lastError: String?
-    @Published var allowLAN = false
+    @Published var allowLAN = false { didSet { UserDefaults.standard.set(allowLAN, forKey:"wirelessAllowed") } }
     @Published var peerConnected = false
     @Published var hasCapturePermission = CGPreflightScreenCaptureAccess()
     @Published var hasInputPermission = CGPreflightPostEventAccess()
     @Published var inputMessage: String?
-    @Published var selectedMode = 0
+    @Published var selectedMode = 0 { didSet { UserDefaults.standard.set(selectedMode, forKey:"displayMode") } }
     @Published private(set) var isStopping = false
 
     let stateDirectory: URL
@@ -107,8 +107,8 @@ import Foundation
     }
 
     func launch() {
-        selectedMode = ProcessInfo.processInfo.arguments.contains("--native") ? 1 : 0
-        allowLAN = ProcessInfo.processInfo.arguments.contains("--allow-lan")
+        selectedMode = ProcessInfo.processInfo.arguments.contains("--native") ? 1 : (UserDefaults.standard.integer(forKey:"displayMode") == 1 ? 1 : 0)
+        allowLAN = ProcessInfo.processInfo.arguments.contains("--allow-lan") || UserDefaults.standard.bool(forKey:"wirelessAllowed")
         do {
             try FileManager.default.createDirectory(at:stateDirectory,withIntermediateDirectories:true,
                 attributes:[.posixPermissions:0o700])

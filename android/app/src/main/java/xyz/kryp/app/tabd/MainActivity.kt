@@ -48,6 +48,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     private val wirelessCandidates = java.util.ArrayDeque<LanDiscovery.Endpoint>()
     private lateinit var client: HostConnection
     private lateinit var decoder: VideoDecoder
+    private lateinit var updater: UpdateManager
     private val preferences by lazy { getSharedPreferences("tabd", MODE_PRIVATE) }
     @Volatile private var foreground = false
     private var resumed = false
@@ -299,6 +300,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             insets
         }
         setContentView(root)
+        updater = UpdateManager(this) { resumed && !fullscreen && !isFinishing }
+        updater.check()
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
         }
@@ -321,6 +324,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         super.onResume()
         resumed = true
         updateScreenAwake()
+        updater.onResume()
     }
     override fun onPause() {
         resumed = false
@@ -359,6 +363,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         cancelRecoveryCommand()
         cancelSurfaceInput("destroyed")
         main.removeCallbacksAndMessages(null)
+        updater.close()
         stopDiscovery()
         client.close()
         decoder.close()
@@ -760,6 +765,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         fullscreen = false; ready.visibility = View.VISIBLE; bar.visibility = View.GONE
         updateScreenAwake()
         window.insetsController?.show(WindowInsets.Type.systemBars())
+        if (::updater.isInitialized) main.post { updater.onResume() }
     }
     private fun revealVideo() {
         if (fullscreen) return
@@ -1113,6 +1119,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             .setMessage("${quality}화질은 Mac의 Mr. Tab-D 메뉴에서 변경합니다.\n무선 연결은 같은 Wi-Fi에서 페어링된 Mac을 자동으로 검색합니다.")
             .setNegativeButton("닫기", null)
             .setPositiveButton("고급 설정 · 수동 IP") { _, _ -> advancedSettings() }
+            .setNeutralButton("업데이트 확인") { _, _ -> updater.check(manual = true) }
             .setOnDismissListener { if (fullscreen) scheduleHide() }.show()
     }
     private fun advancedSettings() {
