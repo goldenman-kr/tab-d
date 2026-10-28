@@ -39,6 +39,13 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     private lateinit var stateLabel: TextView
     private lateinit var barState: TextView
     private lateinit var primary: Button
+    private lateinit var wirelessButton: Button
+    private lateinit var discovery: LanDiscovery
+    private var selectedTransport = "usb"
+    private var discovering = false
+    private var wirelessAttempt = false
+    private var nextSearchAt = 0L
+    private val wirelessCandidates = java.util.ArrayDeque<LanDiscovery.Endpoint>()
     private lateinit var client: HostConnection
     private lateinit var decoder: VideoDecoder
     private val preferences by lazy { getSharedPreferences("tabd", MODE_PRIVATE) }
@@ -213,6 +220,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             (configured?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL ?: "Android 태블릿")
                 .filterNot { it.isISOControl() }.trim().take(128).ifBlank { "Android 태블릿" }
         }
+        discovery = LanDiscovery(this)
+        selectedTransport = preferences.getString("transport", "usb") ?: "usb"
         decoder = VideoDecoder(this)
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         surface = SurfaceView(this).apply {
@@ -257,20 +266,12 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         }
         stateLabel = label("Mac에 연결하는 중…", 16, muted)
         ready.addView(stateLabel, wrap().apply { topMargin = dp(12); bottomMargin = dp(26) })
-        primary = button("화면 연결", true) {
-            lastError = null
-            recovery.userRetry()
-            pendingRecoveryStart = false
-            suppressResume = false
-            preferences.edit().putBoolean("explicitlyDisconnected", false).apply()
-            pauseRequested = false
-            if (retained && state != "error" && !(recovery.recovering && (state == "ready" || state == "stopped"))) pendingResume = true else pendingStart = true
-            updateState(if (recovery.suspended) "Mac이 잠자기 또는 잠금 상태입니다 · Mac을 깨우면 연결됩니다" else "연결을 준비하고 있습니다…")
-            if (authenticated && recovery.awaitingStatus) { client.close(); authenticated = false }
-            if (!client.connected) connect() else maybeStart()
-        }
-        ready.addView(primary, LinearLayout.LayoutParams(dp(240), dp(56)))
-        ready.addView(button("설정", false) { settings() }, wrap().apply { topMargin = dp(16) })
+        primary = button("유선으로 연결", true) { startDisplay("usb") }
+        ready.addView(primary, LinearLayout.LayoutParams(dp(280), dp(56)))
+        wirelessButton = button("무선으로 연결", false) { startDisplay("wireless") }
+        ready.addView(wirelessButton, LinearLayout.LayoutParams(dp(280), dp(56)).apply { topMargin = dp(12) })
+        ready.addView(label("유선 · USB 케이블   /   무선 · 같은 Wi-Fi에서 자동 검색", 14, muted), wrap().apply { topMargin = dp(14) })
+        ready.addView(button("설정", false) { settings() }, wrap().apply { topMargin = dp(12) })
         root.addView(ready, FrameLayout.LayoutParams(-1, -1))
         bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -330,6 +331,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     override fun onStop() {
         if (active || retained || startRequested) requestPause(false)
         foreground = false
+        stopDiscovery()
+        if (wirelessAttempt) { wirelessAttempt = false; client.close() }
         cancelRecoveryCommand()
         pendingResume = false
         invalidateVideo()
@@ -356,16 +359,80 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         cancelRecoveryCommand()
         cancelSurfaceInput("destroyed")
         main.removeCallbacksAndMessages(null)
+        stopDiscovery()
         client.close()
         decoder.close()
         super.onDestroy()
     }
 
+    private fun startDisplay(transport: String) {
+        if (transport != selectedTransport) {
+            if (active || retained || startRequested || disconnectPending) {
+                android.widget.Toast.makeText(this, "연결 종료 후 연결 방식을 바꿔주세요", android.widget.Toast.LENGTH_LONG).show()
+                return
+            }
+            stopDiscovery()
+            wirelessAttempt = false
+            pendingStart = false; pendingResume = false
+            client.close(); authenticated = false
+            selectedTransport = transport
+            preferences.edit().putString("transport", transport).apply()
+        }
+        lastError = null
+        recovery.userRetry()
+        pendingRecoveryStart = false
+        suppressResume = false
+        preferences.edit().putBoolean("explicitlyDisconnected", false).apply()
+        pauseRequested = false
+        if (retained && state != "error" && !(recovery.recovering && (state == "ready" || state == "stopped"))) pendingResume = true else pendingStart = true
+        updateState("연결을 준비하고 있습니다…")
+        if (authenticated && recovery.awaitingStatus) { client.close(); authenticated = false }
+        nextSearchAt = 0L
+        if (!client.connected) connect() else maybeStart()
+    }
+    private fun stopDiscovery() {
+        discovery.stop()
+        discovering = false
+        wirelessCandidates.clear()
+    }
+    private fun beginConnection(host: String, port: Int? = null): Boolean {
+        if (!client.connect(host, foreground, port)) return false
+        authenticated = false
+        recovery.connectionReset()
+        cancelRecoveryCommand()
+        return true
+    }
+    private fun nextWirelessCandidate(): Boolean {
+        if (!foreground || selectedTransport != "wireless" || wirelessCandidates.isEmpty()) return false
+        val endpoint = wirelessCandidates.removeFirst()
+        wirelessAttempt = true
+        updateState("검색한 Mac에 무선으로 연결하는 중…")
+        if (beginConnection(endpoint.host, endpoint.port)) return true
+        wirelessAttempt = false
+        return false
+    }
     private fun connect() {
-        if (client.connect(preferences.getString("host", null), foreground)) {
-            authenticated = false
-            recovery.connectionReset()
-            cancelRecoveryCommand()
+        if (selectedTransport == "usb") { beginConnection("127.0.0.1"); return }
+        if (discovering || wirelessAttempt || android.os.SystemClock.uptimeMillis() < nextSearchAt) return
+        val manual = preferences.getString("host", "")?.trim().orEmpty()
+        if (preferences.getBoolean("manualWireless", false) && manual.isNotBlank()) {
+            beginConnection(manual)
+            return
+        }
+        if (!File(filesDir, "pairing.json").exists()) {
+            showError("최초 USB 페어링이 필요합니다. USB로 연결한 뒤 Mac 앱에서 기기를 설정해주세요")
+            nextSearchAt = android.os.SystemClock.uptimeMillis() + 5000
+            return
+        }
+        discovering = true
+        updateState("같은 Wi-Fi에서 페어링된 Mac을 찾는 중…")
+        discovery.search { endpoints, error ->
+            discovering = false
+            if (!foreground || selectedTransport != "wireless" || client.connected) return@search
+            wirelessCandidates.clear()
+            wirelessCandidates.addAll(endpoints)
+            nextSearchAt = android.os.SystemClock.uptimeMillis() + 5000
+            if (!nextWirelessCandidate()) showError(error ?: "Mac을 찾지 못했습니다. 같은 Wi-Fi와 Mac의 무선 연결 허용을 확인해주세요")
         }
     }
     private fun send(type: String): Boolean = client.send(JSONObject().put("type", type))
@@ -468,6 +535,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                     hostNameLabel.text = value.optString("device", "").filterNot { it.isISOControl() }
                         .trim().take(128).ifBlank { "Mac" }
                     authenticated = true
+                    wirelessAttempt = false
+                    stopDiscovery()
                     lastError = null
                     if (foreground) awaitHostStatus() else cancelRecoveryCommand()
                     if (!retained && !pendingStart) updateState("● ${client.route} · 연결 가능")
@@ -621,6 +690,12 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     override fun connectionError(message: String, generation: Long) {
         main.post {
             if (!client.isCurrent(generation)) return@post
+            if (wirelessAttempt) {
+                wirelessAttempt = false
+                client.close()
+                if (nextWirelessCandidate()) return@post
+                nextSearchAt = android.os.SystemClock.uptimeMillis() + 5000
+            }
             authenticated = false
             cancelRecoveryCommand()
             recovery.connectionReset()
@@ -704,7 +779,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private fun updateState(message: String) {
         stateLabel.text = message
-        primary.text = if (retained) "유지한 화면으로 돌아가기" else "화면 연결"
+        primary.text = if (retained && selectedTransport == "usb") "유선 화면으로 돌아가기" else "유선으로 연결"
+        wirelessButton.text = if (retained && selectedTransport == "wireless") "무선 화면으로 돌아가기" else "무선으로 연결"
         barState.text = getString(R.string.bar_state, client.route)
     }
     private fun showError(message: String) { lastError = message; updateScreenAwake(); updateState(message) }
@@ -1033,27 +1109,52 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         val width = latestConfig?.optInt("width", 0) ?: 0
         val height = latestConfig?.optInt("height", 0) ?: 0
         val quality = if (width > 0 && height > 0) "현재 화질 $width × $height\n" else ""
+        AlertDialog.Builder(this).setTitle("화면 설정")
+            .setMessage("${quality}화질은 Mac의 Mr. Tab-D 메뉴에서 변경합니다.\n무선 연결은 같은 Wi-Fi에서 페어링된 Mac을 자동으로 검색합니다.")
+            .setNegativeButton("닫기", null)
+            .setPositiveButton("고급 설정 · 수동 IP") { _, _ -> advancedSettings() }
+            .setOnDismissListener { if (fullscreen) scheduleHide() }.show()
+    }
+    private fun advancedSettings() {
+        val manual = android.widget.CheckBox(this).apply {
+            text = "무선 연결에 수동 주소 사용"
+            isChecked = preferences.getBoolean("manualWireless", false)
+        }
         val input = EditText(this).apply {
             setSingleLine(true)
-            hint = "USB: 비워두기 / 무선: Mac IP 주소"
+            hint = "Mac의 IP 주소 또는 호스트 이름"
             setText(preferences.getString("host", ""))
-            setPadding(dp(20), dp(18), dp(20), dp(18))
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
-        AlertDialog.Builder(this).setTitle("화면 설정")
-            .setMessage("${quality}화질은 Mac의 Mr. Tab-D 메뉴에서 변경합니다.\n연결 주소는 화면 연결을 종료한 뒤 바꿀 수 있습니다.")
-            .setView(input).setNegativeButton("닫기", null)
-            .setPositiveButton("주소 적용") { _, _ ->
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            addView(manual); addView(input)
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("고급 설정")
+            .setMessage("자동 검색이 안 되는 네트워크에서 사용하세요. 유선 연결에는 적용되지 않습니다.")
+            .setView(content).setNegativeButton("취소", null).setPositiveButton("저장", null)
+            .setOnDismissListener { if (fullscreen) scheduleHide() }.create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val host = input.text.toString().trim()
-                if (active || retained) {
-                    showError("연결 종료 후 주소를 바꿔주세요")
-                } else if (host.contains(Regex("[\\s/:]")) && host != "127.0.0.1") {
-                    showError("호스트 이름 또는 IPv4 주소만 입력해주세요")
+                if (active || retained || startRequested) {
+                    input.error = "연결 종료 후 변경해주세요"
+                } else if (manual.isChecked && (host.isBlank() || host.contains(Regex("[\\s/:]")) ||
+                        host == "127.0.0.1" || host.equals("localhost", true))) {
+                    input.error = "Mac의 호스트 이름 또는 IPv4 주소를 입력해주세요"
                 } else {
-                    preferences.edit().putString("host", host).apply()
-                    client.close(); authenticated = false; connect()
+                    preferences.edit().putString("host", host).putBoolean("manualWireless", manual.isChecked).apply()
+                    if (selectedTransport == "wireless") {
+                        stopDiscovery(); wirelessAttempt = false; nextSearchAt = 0L
+                        client.close(); authenticated = false
+                        connect()
+                    }
+                    dialog.dismiss()
                 }
-            }.setOnDismissListener { if (fullscreen) scheduleHide() }.show()
+            }
+        }
+        dialog.show()
     }
     private fun fitSurface() {
         if (decodedWidth <= 0 || decodedHeight <= 0 || root.width <= 0) return

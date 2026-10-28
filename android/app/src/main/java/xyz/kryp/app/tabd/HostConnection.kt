@@ -31,7 +31,7 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
     @Volatile var route = "USB"; private set
     @Volatile var lastFailure: String? = null; private set
 
-    fun connect(manualHost: String?, visible: Boolean): Boolean {
+    fun connect(host: String, visible: Boolean, discoveredPort: Int? = null): Boolean {
         val current = synchronized(stateLock) {
             if (connected || connecting) return false
             connecting = true
@@ -48,12 +48,12 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
                 val token = config.getString("token")
                 pairingToken = token
                 require(token.length >= 16) { "페어링 정보가 올바르지 않습니다" }
-                val configured = manualHost?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: config.optString("host", "127.0.0.1").ifBlank { "127.0.0.1" }
+                val configured = host.trim()
+                require(configured.isNotEmpty()) { "연결 주소가 없습니다" }
                 val local = configured == "127.0.0.1" || configured == "localhost"
                 val targetRoute = if (local) "USB" else "무선"
                 synchronized(stateLock) { if (current == generation) route = targetRoute }
-                val port = config.optInt(if (local) "usbPort" else "lanPort", if (local) 49832 else 49833)
+                val port = discoveredPort ?: config.optInt(if (local) "usbPort" else "lanPort", if (local) 49832 else 49833)
                 require(port in 1024..65535) { "연결 포트가 올바르지 않습니다" }
                 // The private ADB-provisioned leaf certificate is the trust anchor, including for changing LAN IPs.
                 // Rejects absent/expired certificates and compares all 32 pin bytes in constant time.
