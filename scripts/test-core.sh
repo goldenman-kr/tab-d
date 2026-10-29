@@ -4,6 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 bash scripts/test-session.sh
 xcrun swiftc -swift-version 5 -warnings-as-errors -module-cache-path "$PWD/build/module-cache" \
+ mac/Transport/USBDeviceSelection.swift mac/Tests/USBDeviceSelectionTests.swift -o build/usb-device-selection-tests
+build/usb-device-selection-tests
+xcrun swiftc -swift-version 5 -warnings-as-errors -module-cache-path "$PWD/build/module-cache" \
  -framework CoreGraphics mac/Session/SessionMachine.swift mac/Input/*.swift mac/Tests/PointerInputTests.swift -o build/pointer-input-tests
 build/pointer-input-tests
 xcrun swiftc -swift-version 5 -module-cache-path "$PWD/build/module-cache" \

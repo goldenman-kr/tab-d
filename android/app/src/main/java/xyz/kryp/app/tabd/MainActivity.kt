@@ -40,6 +40,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     private lateinit var barState: TextView
     private lateinit var primary: Button
     private lateinit var wirelessButton: Button
+    private lateinit var disconnectButton: Button
     private lateinit var discovery: LanDiscovery
     private var selectedTransport = "usb"
     private var discovering = false
@@ -74,6 +75,20 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         }
     }
     private var disconnectPending = false
+    private var disconnectRequested = false
+    private val disconnectTimeout = Runnable {
+        if (disconnectPending) {
+            disconnectPending = false
+            client.close()
+            authenticated = false; active = false
+            pendingStart = false; pendingResume = false
+            recovery.connectionReset()
+            state = "error"
+            invalidateVideo(); showReady()
+            showError("Mac의 종료 응답을 받지 못했습니다. 재연결되면 종료 요청을 다시 전달합니다")
+            diagnostics()
+        }
+    }
     private var fullscreen = false
     private var systemBarsVisible: Boolean? = null
     private var leavingForHome = false
@@ -214,7 +229,9 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         retained = preferences.getBoolean("retained", false)
+        disconnectRequested = preferences.getBoolean("disconnectRequested", false)
         suppressResume = preferences.getBoolean("explicitlyDisconnected", false)
+        if (disconnectRequested) suppressResume = true
         if (suppressResume) retained = false
         client = HostConnection(File(filesDir, "pairing.json"), this) {
             val configured = runCatching { android.provider.Settings.Global.getString(contentResolver, "device_name") }.getOrNull()
@@ -271,6 +288,9 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         ready.addView(primary, LinearLayout.LayoutParams(dp(280), dp(56)))
         wirelessButton = button("무선으로 연결", false) { startDisplay("wireless") }
         ready.addView(wirelessButton, LinearLayout.LayoutParams(dp(280), dp(56)).apply { topMargin = dp(12) })
+        disconnectButton = button("연결 종료", false) { disconnect() }
+        disconnectButton.visibility = View.GONE
+        ready.addView(disconnectButton, LinearLayout.LayoutParams(dp(280), dp(56)).apply { topMargin = dp(12) })
         ready.addView(label("유선 · USB 케이블   /   무선 · 같은 Wi-Fi에서 자동 검색", 14, muted), wrap().apply { topMargin = dp(14) })
         ready.addView(button("설정", false) { settings() }, wrap().apply { topMargin = dp(12) })
         root.addView(ready, FrameLayout.LayoutParams(-1, -1))
@@ -372,13 +392,17 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
 
     private fun startDisplay(transport: String) {
         if (transport != selectedTransport) {
-            if (active || retained || startRequested || disconnectPending) {
+            if (recovery.hasConfirmedDisplay(client.connected, authenticated, retained) ||
+                (client.connected && authenticated && (startRequested || disconnectPending))) {
                 android.widget.Toast.makeText(this, "연결 종료 후 연결 방식을 바꿔주세요", android.widget.Toast.LENGTH_LONG).show()
                 return
             }
             stopDiscovery()
             wirelessAttempt = false
             pendingStart = false; pendingResume = false
+            active = false; startRequested = false; resumeInFlight = false; retain(false)
+            cancelRecoveryCommand()
+            recovery.connectionReset()
             client.close(); authenticated = false
             selectedTransport = transport
             preferences.edit().putString("transport", transport).apply()
@@ -386,14 +410,17 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         lastError = null
         recovery.userRetry()
         pendingRecoveryStart = false
-        suppressResume = false
-        preferences.edit().putBoolean("explicitlyDisconnected", false).apply()
+        suppressResume = disconnectRequested
+        preferences.edit().putBoolean("explicitlyDisconnected", suppressResume).apply()
         pauseRequested = false
-        if (retained && state != "error" && !(recovery.recovering && (state == "ready" || state == "stopped"))) pendingResume = true else pendingStart = true
+        pendingStart = false; pendingResume = false
+        if (!disconnectRequested && recovery.hasConfirmedDisplay(client.connected, authenticated, retained) && state != "error" && !(recovery.recovering && (state == "ready" || state == "stopped"))) pendingResume = true else pendingStart = true
         updateState("연결을 준비하고 있습니다…")
         if (authenticated && recovery.awaitingStatus) { client.close(); authenticated = false }
         nextSearchAt = 0L
-        if (!client.connected) connect() else maybeStart()
+        if (!client.connected) connect()
+        else if (disconnectRequested) sendPendingDisconnect()
+        else maybeStart()
     }
     private fun stopDiscovery() {
         discovery.stop()
@@ -442,7 +469,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private fun send(type: String): Boolean = client.send(JSONObject().put("type", type))
     private fun maybeStart() {
-        if (!authenticated || !surfaceReady || !foreground || !recovery.canRequest()) return
+        if (disconnectRequested || !authenticated || !surfaceReady || !foreground || !recovery.canRequest()) return
         if (pendingResume && retained && recovery.recovering && (state == "ready" || state == "stopped")) {
             pendingResume = false
             pendingStart = true; pendingRecoveryStart = true
@@ -517,19 +544,50 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private fun disconnect() {
         cancelRecoveryCommand()
+        main.removeCallbacks(homeTimeout)
         pendingRecoveryStart = false
         pendingStart = false; pendingResume = false; pendingHome = false; pauseRequested = false
         retain(false)
         suppressResume = true
-        disconnectPending = true
+        disconnectRequested = true
         suppressionEpoch = hostEpoch
-        preferences.edit().putBoolean("explicitlyDisconnected", true).apply()
-        active = false
-        startRequested = false; resumeInFlight = false
-        invalidateVideo()
-        showReady()
+        preferences.edit().putBoolean("explicitlyDisconnected", true).putBoolean("disconnectRequested", true).apply()
+        active = false; startRequested = false; resumeInFlight = false
+        displayID = null
+        state = "stopped"
+        invalidateVideo(); showReady()
+        if (client.connected && authenticated) sendPendingDisconnect()
+        else {
+            disconnectPending = false
+            main.removeCallbacks(disconnectTimeout)
+            client.close(); authenticated = false
+            recovery.connectionReset()
+            updateState("연결을 초기화했습니다 · Mac에 재연결되면 화면 종료를 요청합니다")
+        }
+        diagnostics()
+    }
+    private fun sendPendingDisconnect() {
+        if (!disconnectRequested || disconnectPending || !client.connected || !authenticated) return
+        disconnectPending = true
+        main.removeCallbacks(disconnectTimeout)
+        main.postDelayed(disconnectTimeout, 5000)
         updateState("연결 종료 중…")
-        if (!send("disconnect")) showError("Mac의 연결 종료를 확인하지 못했습니다. Mac 메뉴에서 확인해주세요")
+        if (!send("disconnect")) disconnectTimeout.run()
+    }
+    private fun finishDisconnect() {
+        main.removeCallbacks(disconnectTimeout)
+        cancelRecoveryCommand()
+        disconnectRequested = false; disconnectPending = false
+        preferences.edit().putBoolean("disconnectRequested", false).apply()
+        state = "stopped"; active = false; retain(false); displayID = null
+        startRequested = false; resumeInFlight = false
+        recovery.status("stopped", false, false, false)
+        if (pendingStart) {
+            suppressResume = false
+            preferences.edit().putBoolean("explicitlyDisconnected", false).apply()
+        }
+        invalidateVideo(); showReady(); updateState("● ${client.route} · 연결 가능")
+        maybeStart()
     }
 
     override fun control(value: JSONObject, generation: Long) {
@@ -545,16 +603,25 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                     lastError = null
                     if (foreground) awaitHostStatus() else cancelRecoveryCommand()
                     if (!retained && !pendingStart) updateState("● ${client.route} · 연결 가능")
+                    if (disconnectRequested) sendPendingDisconnect()
                     // The following authoritative status decides whether the retained display still exists.
                 }
                 "status" -> {
                     val incomingState = value.optString("state", "ready")
+                    if (disconnectRequested) {
+                        // A newly authenticated host may still own the paused display.
+                        // Clear the persisted request only after an authoritative stop.
+                        if ((incomingState == "ready" || incomingState == "stopped") && value.optLong("displayID", 0) == 0L) finishDisconnect()
+                        else sendPendingDisconnect()
+                        diagnostics()
+                        return@post
+                    }
                     val hadIntent = retained || active || startRequested || resumeInFlight || pendingResume || pendingStart
                     val action = recovery.status(incomingState, value.optBoolean("hostSuspended", false), value.optBoolean("hostRecovering", false), hadIntent && !suppressResume && !disconnectPending)
                     if (recovery.awaitingCommand == null) main.removeCallbacks(recoveryTimeout)
                     val announcedEpoch = value.optLong("epoch", hostEpoch)
                     hostEpoch = announcedEpoch
-                    if (value.has("displayID")) displayID = value.optLong("displayID")
+                    displayID = value.optLong("displayID", 0).takeIf { it > 0 }
                     if (action == HostRecoveryGate.Action.HOLD) {
                         cancelRecoveryCommand()
                         active = false; startRequested = false
@@ -649,9 +716,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                     if (pendingHome) goHome()
                 }
                 "disconnectAck" -> {
-                    state = "stopped"; active = false; retain(false); latestConfig = null
-                    disconnectPending = false; startRequested = false; resumeInFlight = false
-                    invalidateVideo(); showReady(); updateState("● ${client.route} · 연결 가능")
+                    finishDisconnect()
                 }
                 "clickResult" -> {
                     val id = value.optString("id")
@@ -701,9 +766,12 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                 if (nextWirelessCandidate()) return@post
                 nextSearchAt = android.os.SystemClock.uptimeMillis() + 5000
             }
-            authenticated = false
+            authenticated = false; active = false
+            startRequested = false; resumeInFlight = false; disconnectPending = false
+            main.removeCallbacks(disconnectTimeout)
             cancelRecoveryCommand()
             recovery.connectionReset()
+            state = "error"
             invalidateVideo(); showReady()
             if (retained && foreground && !pendingStart) pendingResume = true
             showError(message)
@@ -785,8 +853,11 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private fun updateState(message: String) {
         stateLabel.text = message
-        primary.text = if (retained && selectedTransport == "usb") "유선 화면으로 돌아가기" else "유선으로 연결"
-        wirelessButton.text = if (retained && selectedTransport == "wireless") "무선 화면으로 돌아가기" else "무선으로 연결"
+        val confirmed = recovery.hasConfirmedDisplay(client.connected, authenticated, retained)
+        primary.text = if (confirmed && selectedTransport == "usb") "유선 화면으로 돌아가기" else "유선으로 연결"
+        wirelessButton.text = if (confirmed && selectedTransport == "wireless") "무선 화면으로 돌아가기" else "무선으로 연결"
+        disconnectButton.visibility = if (retained || active || startRequested || pendingStart || pendingResume || disconnectRequested) View.VISIBLE else View.GONE
+        disconnectButton.isEnabled = !disconnectPending
         barState.text = getString(R.string.bar_state, client.route)
     }
     private fun showError(message: String) { lastError = message; updateScreenAwake(); updateState(message) }
@@ -1177,7 +1248,9 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
                 .put("pendingStart", pendingStart).put("pendingResume", pendingResume).put("resumeInFlight", resumeInFlight)
                 .put("awaitingCommand", recovery.awaitingCommand).put("commandDeadlineMillis", recovery.deadlineMillis)
                 .put("recoveryRetryBlocked", recovery.retryBlocked)
-                .put("retained", retained).put("pauseRequested", pauseRequested).put("pendingHome", pendingHome)
+                .put("retained", retained).put("disconnectRequested", disconnectRequested).put("disconnectPending", disconnectPending)
+                .put("confirmedDisplay", recovery.hasConfirmedDisplay(client.connected, authenticated, retained))
+                .put("pauseRequested", pauseRequested).put("pendingHome", pendingHome)
                 .put("homeTaskMoved", homeTaskMoved)
                 .put("fullscreen", fullscreen).put("surfaceReady", surfaceReady).put("frames", frames)
                 .put("barVisible", bar.visibility == View.VISIBLE).put("pendingClickCount", pendingClicks.size).put("lastClick", lastClick)

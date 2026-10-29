@@ -6,6 +6,7 @@ final class USBConnector {
     private let queue = DispatchQueue(label:"xyz.kryp.app.tabd.usb-setup")
     private var busy=false
     private var provisioned=false
+    private var selectedSerial: String?
     private let adb:URL
     init() {
         adb=URL(fileURLWithPath:ProcessInfo.processInfo.environment["TABD_ADB"] ??
@@ -19,12 +20,25 @@ final class USBConnector {
                 self.report("USB 연결에는 Android platform-tools의 adb가 필요합니다"); return
             }
             do {
-                let state=try self.run(["get-state"])
-                guard state.0 == 0, String(data:state.1,encoding:.utf8)?.trimmingCharacters(in:.whitespacesAndNewlines) == "device" else {
-                    self.provisioned=false
-                    self.report("USB 디버깅 연결과 태블릿의 이 컴퓨터 허용을 확인해주세요"); return
+                let inventory = try self.run(["devices", "-l"])
+                guard inventory.0 == 0 else { self.report("USB 기기 목록을 확인하지 못했습니다"); return }
+                let devices = USBDeviceSelection.authorizedUSBDevices(String(data: inventory.1, encoding: .utf8) ?? "")
+                var candidates: [String] = []
+                for serial in devices {
+                    let installed = try self.run(["shell", "pm", "list", "packages", "xyz.kryp.app.tabd"], serial: serial)
+                    if installed.0 == 0 && USBDeviceSelection.hasTabD(String(data: installed.1, encoding: .utf8) ?? "") {
+                        candidates.append(serial)
+                    }
                 }
-                let existing=try self.run(["reverse","--list"])
+                guard let serial = USBDeviceSelection.uniqueTarget(candidates) else {
+                    self.provisioned = false
+                    self.selectedSerial = nil
+                    self.report(candidates.count > 1 ? "Tab-D가 설치된 USB 기기가 여러 대입니다. 사용할 태블릿 한 대만 연결해주세요" :
+                        "Tab-D 설치와 USB 디버깅 연결 및 태블릿의 이 컴퓨터 허용을 확인해주세요")
+                    return
+                }
+                if self.selectedSerial != serial { self.provisioned = false; self.selectedSerial = serial }
+                let existing=try self.run(["reverse","--list"], serial: serial)
                 let lines=(String(data:existing.1,encoding:.utf8) ?? "").split(separator:"\n").map { $0.split(separator:" ").map(String.init) }
                 if lines.contains(where:{ $0.count >= 3 && $0[$0.count-2] == "tcp:49832" && $0.last != "tcp:49832" }) {
                     self.report("태블릿의 USB 연결 포트가 다른 서비스에서 사용 중입니다"); return
@@ -33,7 +47,7 @@ final class USBConnector {
                 if self.provisioned && mapped {
                     // Reinstalling/clearing Android data can leave adb reverse intact.
                     // Compare private bytes internally; never publish pairing material.
-                    let saved = try self.run(["shell","run-as","xyz.kryp.app.tabd","cat","files/pairing.json"])
+                    let saved = try self.run(["shell","run-as","xyz.kryp.app.tabd","cat","files/pairing.json"], serial: serial)
                     if saved.0 == 0,
                        let object = try? JSONSerialization.jsonObject(with:saved.1) as? [String:Any],
                        NSDictionary(dictionary:object).isEqual(to:pairing) { return }
@@ -45,7 +59,7 @@ final class USBConnector {
                     (["shell","run-as","xyz.kryp.app.tabd","sh","-c","'cat > files/pairing.json'"],bytes),
                     (["shell","run-as","xyz.kryp.app.tabd","chmod","600","files/pairing.json"],nil)
                 ] as [([String],Data?)] {
-                    guard try self.run(arguments,input:input).0 == 0 else {
+                    guard try self.run(arguments,input:input, serial: serial).0 == 0 else {
                         self.report("태블릿의 Tab-D 앱 설치와 USB 디버깅 허용을 확인해주세요"); return
                     }
                 }
@@ -56,9 +70,9 @@ final class USBConnector {
         }
     }
     private func report(_ value:String?) { DispatchQueue.main.async { self.onStatus?(value) } }
-    private func run(_ arguments:[String],input:Data?=nil) throws -> (Int32,Data) {
+    private func run(_ arguments:[String],input:Data?=nil, serial: String? = nil) throws -> (Int32,Data) {
         let process=Process(); let output=Pipe(); let errors=Pipe(); let source=Pipe()
-        process.executableURL=adb; process.arguments=["-d"]+arguments
+        process.executableURL=adb; process.arguments=(serial.map { ["-s", $0] } ?? [])+arguments
         process.standardOutput=output; process.standardError=errors; process.standardInput=source
         try process.run()
         let timeout=DispatchWorkItem { if process.isRunning { process.terminate() } }

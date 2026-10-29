@@ -9,8 +9,8 @@ android {
         applicationId 'xyz.kryp.app.tabd'
         minSdk 30
         targetSdk 36
-        versionCode 11
-        versionName '0.6.5'
+        versionCode 12
+        versionName '0.6.6'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = '17' }

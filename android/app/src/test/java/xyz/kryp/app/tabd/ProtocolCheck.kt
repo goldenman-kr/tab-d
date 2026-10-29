@@ -53,11 +53,20 @@ object ProtocolCheck {
         val resume = HostRecoveryGate.Action.RESUME
         val start = HostRecoveryGate.Action.START
         val hold = HostRecoveryGate.Action.HOLD
+        expect(!gate.hasConfirmedDisplay(false, false, true)) // Persisted intent after socket loss.
+        expect(!gate.hasConfirmedDisplay(true, false, true)) // TCP/TLS is not authentication.
+        expect(!gate.hasConfirmedDisplay(true, true, true)) // Still awaiting authoritative status.
         expect(!gate.canRequest()) // helloAck alone cannot resurrect an old display.
         gate.helloAcknowledged(100)
         expect(gate.awaitingCommand == "status" && gate.deadlineMillis == 5100L && !gate.canRequest())
         expect(gate.status("ready", false, false, true) == none && gate.canRequest())
+        expect(!gate.hasConfirmedDisplay(true, true, false)) // Ready host has no retained display.
         gate.connectionReset()
+        expect(gate.status("paused", false, false, true) == resume && gate.canRequest())
+        expect(gate.hasConfirmedDisplay(true, true, true))
+        expect(!gate.hasConfirmedDisplay(false, true, true)) // Lost transport invalidates stale authentication.
+        gate.connectionReset()
+        expect(!gate.hasConfirmedDisplay(true, true, true)) // New generation needs a fresh status.
         expect(gate.status("paused", false, false, true) == resume && gate.canRequest())
         gate.commandSent("resume", 1000)
         expect(gate.status("paused", false, false, true) == none && !gate.canRequest())

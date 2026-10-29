@@ -26,6 +26,10 @@ class HostRecoveryGate(private val timeoutMillis: Long = 5000) {
         awaitingCommand = command
         deadlineMillis = now + timeoutMillis
     }
+    // A persisted resume intent is not evidence of a live host-owned display.
+    fun hasConfirmedDisplay(connected: Boolean, authenticated: Boolean, retained: Boolean) =
+        connected && authenticated && !awaitingStatus && retained
+
     fun canRequest() = !awaitingStatus && !suspended && !retryBlocked && awaitingCommand == null
 
     fun status(state: String, hostSuspended: Boolean, hostRecovering: Boolean, intent: Boolean): Action {

@@ -22,7 +22,7 @@ import plistlib
 root=Path.cwd()
 info={'CFBundleExecutable':'Tab-D','CFBundleIdentifier':'xyz.kryp.app.tabd',
  'CFBundleName':'Mr. Tab-D','CFBundleDisplayName':'Mr. Tab-D','CFBundlePackageType':'APPL',
- 'CFBundleShortVersionString':'0.6.5','CFBundleVersion':'10','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
+ 'CFBundleShortVersionString':'0.6.6','CFBundleVersion':'11','CFBundleIconFile':'TabD.icns','LSMinimumSystemVersion':'14.0',
  'LSUIElement':True,'NSHighResolutionCapable':True,
  'NSLocalNetworkUsageDescription':'태블릿에 Mac 확장 화면을 보내기 위해 로컬 네트워크를 사용합니다.',
  'NSBonjourServices':['_tabd._tcp'],

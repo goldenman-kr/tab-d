@@ -105,7 +105,15 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
             } catch (error: Exception) {
                 val failure = diagnosticFailure(error, pairingToken)
                 val report = synchronized(stateLock) {
-                    if (current != generation) false else { lastFailure = failure; true }
+                    if (current != generation) false else {
+                        lastFailure = failure
+                        // Publish transport loss before notifying UI/retry code.
+                        connected = false
+                        output = null
+                        socket = null
+                        connecting = false
+                        true
+                    }
                 }
                 if (report) {
                     listener.connectionError(when (error) {
