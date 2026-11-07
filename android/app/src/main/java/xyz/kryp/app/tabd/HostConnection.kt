@@ -23,6 +23,7 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
     @Volatile private var socket: SSLSocket? = null
     @Volatile private var output: DataOutputStream? = null
     private val stateLock = Any()
+    private var connectingTransport: Socket? = null // Also cancel TCP/TLS setup before publication.
     private var connecting = false // Guarded by stateLock, together with generation and transport publication.
     @Volatile private var generation = 0L
     private val writer = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
@@ -72,6 +73,10 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
                 val context = SSLContext.getInstance("TLS")
                 context.init(null, arrayOf<TrustManager>(trust), SecureRandom())
                 transport = Socket()
+                val preparing = synchronized(stateLock) {
+                    if (current != generation) false else { connectingTransport = transport; true }
+                }
+                if (!preparing) return@Thread
                 transport.connect(InetSocketAddress(configured, port), 4000)
                 val ssl = context.socketFactory.createSocket(transport, configured, port, true) as SSLSocket
                 session = ssl
@@ -85,6 +90,7 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
                 val published = synchronized(stateLock) {
                     if (current != generation) false else {
                         socket = ssl
+                        connectingTransport = null
                         output = sink
                         lastFailure = null
                         route = targetRoute
@@ -111,6 +117,7 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
                         connected = false
                         output = null
                         socket = null
+                        connectingTransport = null
                         connecting = false
                         true
                     }
@@ -175,8 +182,9 @@ class HostConnection(private val pairingFile: File, private val listener: Listen
             connected = false
             connecting = false
             output = null
-            socket.also { socket = null }
+            Pair(socket, connectingTransport).also { socket = null; connectingTransport = null }
         }
-        runCatching { detached?.close() }
+        runCatching { detached.first?.close() }
+        runCatching { detached.second?.close() }
     }
 }

@@ -76,16 +76,17 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private var disconnectPending = false
     private var disconnectRequested = false
+    private var connectionWorkEnabled = false
     private val disconnectTimeout = Runnable {
         if (disconnectPending) {
             disconnectPending = false
-            client.close()
+            stopConnectionWork()
             authenticated = false; active = false
             pendingStart = false; pendingResume = false
             recovery.connectionReset()
             state = "error"
             invalidateVideo(); showReady()
-            showError("Mac의 종료 응답을 받지 못했습니다. 재연결되면 종료 요청을 다시 전달합니다")
+            showError("Mac의 종료 응답을 받지 못해 통신을 중지했습니다. 다음 연결 때 종료 요청을 다시 전달합니다")
             diagnostics()
         }
     }
@@ -215,12 +216,14 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     }
     private val reconnect = object : Runnable {
         override fun run() {
+            if (!connectionWorkEnabled) return
             if (foreground && !client.connected) connect()
             if (foreground) main.postDelayed(this, 2500)
         }
     }
     private val heartbeat = object : Runnable {
         override fun run() {
+            if (!connectionWorkEnabled) return
             if (client.connected) send("ping")
             main.postDelayed(this, 2500)
         }
@@ -233,6 +236,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         suppressResume = preferences.getBoolean("explicitlyDisconnected", false)
         if (disconnectRequested) suppressResume = true
         if (suppressResume) retained = false
+        connectionWorkEnabled = !suppressResume
+        if (suppressResume) state = "stopped"
         client = HostConnection(File(filesDir, "pairing.json"), this) {
             val configured = runCatching { android.provider.Settings.Global.getString(contentResolver, "device_name") }.getOrNull()
             (configured?.takeIf { it.isNotBlank() } ?: android.os.Build.MODEL ?: "Android 태블릿")
@@ -282,7 +287,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             hostNameLabel = label("Mac", 30, Color.WHITE, true)
             addView(hostNameLabel, wrap())
         }
-        stateLabel = label("Mac에 연결하는 중…", 16, muted)
+        stateLabel = label(if (connectionWorkEnabled) "Mac에 연결하는 중…" else "연결 종료됨 · 연결 버튼을 누르면 시작합니다", 16, muted)
         ready.addView(stateLabel, wrap().apply { topMargin = dp(12); bottomMargin = dp(26) })
         primary = button("유선으로 연결", true) { startDisplay("usb") }
         ready.addView(primary, LinearLayout.LayoutParams(dp(280), dp(56)))
@@ -327,7 +332,6 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         }
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitSurface() }
         diagnostics()
-        main.post(heartbeat)
     }
 
     override fun onStart() {
@@ -335,10 +339,11 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         foreground = true
         leavingForHome = false
         if (retained) pendingResume = true
-        main.post(reconnect)
+        startConnectionWork()
         if (client.connected) {
             if (authenticated && recovery.awaitingStatus) awaitHostStatus() else maybeStart()
         }
+        diagnostics()
     }
     override fun onResume() {
         super.onResume()
@@ -407,6 +412,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
             selectedTransport = transport
             preferences.edit().putString("transport", transport).apply()
         }
+        connectionWorkEnabled = true
         lastError = null
         recovery.userRetry()
         pendingRecoveryStart = false
@@ -421,6 +427,25 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         if (!client.connected) connect()
         else if (disconnectRequested) sendPendingDisconnect()
         else maybeStart()
+        startConnectionWork()
+    }
+    private fun startConnectionWork() {
+        main.removeCallbacks(reconnect)
+        main.removeCallbacks(heartbeat)
+        if (!connectionWorkEnabled) return
+        if (foreground) main.post(reconnect)
+        main.post(heartbeat)
+    }
+    private fun stopConnectionWork() {
+        connectionWorkEnabled = false
+        main.removeCallbacks(reconnect)
+        main.removeCallbacks(heartbeat)
+        stopDiscovery()
+        wirelessAttempt = false
+        client.close()
+        authenticated = false
+        cancelRecoveryCommand()
+        recovery.connectionReset()
     }
     private fun stopDiscovery() {
         discovery.stop()
@@ -428,6 +453,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         wirelessCandidates.clear()
     }
     private fun beginConnection(host: String, port: Int? = null): Boolean {
+        if (!connectionWorkEnabled || !foreground) return false
         if (!client.connect(host, foreground, port)) return false
         authenticated = false
         recovery.connectionReset()
@@ -435,7 +461,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         return true
     }
     private fun nextWirelessCandidate(): Boolean {
-        if (!foreground || selectedTransport != "wireless" || wirelessCandidates.isEmpty()) return false
+        if (!connectionWorkEnabled || !foreground || selectedTransport != "wireless" || wirelessCandidates.isEmpty()) return false
         val endpoint = wirelessCandidates.removeFirst()
         wirelessAttempt = true
         updateState("검색한 Mac에 무선으로 연결하는 중…")
@@ -444,6 +470,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         return false
     }
     private fun connect() {
+        if (!connectionWorkEnabled || !foreground) return
         if (selectedTransport == "usb") { beginConnection("127.0.0.1"); return }
         if (discovering || wirelessAttempt || android.os.SystemClock.uptimeMillis() < nextSearchAt) return
         val manual = preferences.getString("host", "")?.trim().orEmpty()
@@ -460,7 +487,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         updateState("같은 Wi-Fi에서 페어링된 Mac을 찾는 중…")
         discovery.search { endpoints, error ->
             discovering = false
-            if (!foreground || selectedTransport != "wireless" || client.connected) return@search
+            if (!connectionWorkEnabled || !foreground || selectedTransport != "wireless" || client.connected) return@search
             wirelessCandidates.clear()
             wirelessCandidates.addAll(endpoints)
             nextSearchAt = android.os.SystemClock.uptimeMillis() + 5000
@@ -543,6 +570,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         if (homeTaskMoved == false) finish()
     }
     private fun disconnect() {
+        stopDiscovery()
         cancelRecoveryCommand()
         main.removeCallbacks(homeTimeout)
         pendingRecoveryStart = false
@@ -560,9 +588,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         else {
             disconnectPending = false
             main.removeCallbacks(disconnectTimeout)
-            client.close(); authenticated = false
-            recovery.connectionReset()
-            updateState("연결을 초기화했습니다 · Mac에 재연결되면 화면 종료를 요청합니다")
+            stopConnectionWork()
+            updateState("통신을 중지했습니다 · 다음 연결 때 Mac의 화면 종료를 확인합니다")
         }
         diagnostics()
     }
@@ -575,6 +602,12 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         if (!send("disconnect")) disconnectTimeout.run()
     }
     private fun finishDisconnect() {
+        if (!disconnectRequested) {
+            // Mac's own Stop button also sends disconnectAck after removing the display.
+            pendingStart = false; pendingResume = false; pendingRecoveryStart = false
+            suppressResume = true
+            preferences.edit().putBoolean("explicitlyDisconnected", true).apply()
+        }
         main.removeCallbacks(disconnectTimeout)
         cancelRecoveryCommand()
         disconnectRequested = false; disconnectPending = false
@@ -585,8 +618,11 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
         if (pendingStart) {
             suppressResume = false
             preferences.edit().putBoolean("explicitlyDisconnected", false).apply()
+        } else {
+            stopConnectionWork()
         }
-        invalidateVideo(); showReady(); updateState("● ${client.route} · 연결 가능")
+        invalidateVideo(); showReady()
+        updateState(if (connectionWorkEnabled) "● ${client.route} · 연결 가능" else "연결 종료됨 · 연결 버튼을 누르면 다시 시작합니다")
         maybeStart()
     }
 
@@ -760,6 +796,7 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     override fun connectionError(message: String, generation: Long) {
         main.post {
             if (!client.isCurrent(generation)) return@post
+            if (disconnectRequested && !pendingStart) stopConnectionWork()
             if (wirelessAttempt) {
                 wirelessAttempt = false
                 client.close()
@@ -1243,7 +1280,8 @@ class MainActivity : Activity(), HostConnection.Listener, VideoDecoder.Listener 
     private fun diagnostics() {
         runCatching {
             val value = JSONObject().put("state", state).put("authenticated", authenticated).put("foreground", foreground)
-                .put("connected", client.connected).put("awaitingHostStatus", recovery.awaitingStatus)
+                .put("connected", client.connected).put("connectionWorkEnabled", connectionWorkEnabled)
+                .put("discovering", discovering).put("awaitingHostStatus", recovery.awaitingStatus)
                 .put("hostSuspended", recovery.suspended).put("hostRecovering", recovery.recovering)
                 .put("pendingStart", pendingStart).put("pendingResume", pendingResume).put("resumeInFlight", resumeInFlight)
                 .put("awaitingCommand", recovery.awaitingCommand).put("commandDeadlineMillis", recovery.deadlineMillis)
